@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Multimodal Interpreter</title>
+<style>
+  body {
+    margin: 0;
+    font-family: 'Inter', sans-serif;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(to bottom, #6e9ccf 0%, #cfe3f6 100%);
+    color: white;
+  }
+
+  .top-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px;
+    justify-content: space-between;
+  }
+
+  button {
+    border: none;
+    border-radius: 20px;
+    padding: 8px 16px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    background: rgba(255,255,255,0.2);
+    color: white;
+    transition: background 0.15s ease;
+  }
+  button:hover {
+    background: rgba(255,255,255,0.35);
+  }
+  .active {
+    background: #1e88e5 !important;
+  }
+  .active:hover {
+    background: #1e88e5 !important;
+  }
+
+  .lang-buttons {
+    display: flex;
+    gap: 8px;
+    flex: 1;
+    justify-content: center;
+  }
+
+  .main {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+  .panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 10px;
+    overflow-y: auto;
+    position: relative;
+  }
+  .divider {
+    width: 1px;
+    background: rgba(255,255,255,0.4);
+  }
+
+  .message {
+    padding: 8px 12px;
+    margin: 4px 0;
+    border-radius: 16px;
+    max-width: 80%;
+    line-height: 1.4;
+  }
+  .from-human {
+    background: rgba(255,255,255,0.25);
+    align-self: flex-start;
+  }
+  .from-ai {
+    background: rgba(0,0,0,0.25);
+    align-self: flex-start;
+  }
+
+  /* Fixed typing area */
+  #typing-area {
+    text-align: right;
+    padding-right: 30px;
+    padding-top: 10px;
+    outline: none;
+    border: none;
+    background: transparent;
+    color: white;
+    font-size: 1.1rem;
+    min-height: 30px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+</style>
+</head>
+<body>
+
+  <!-- Top Bar -->
+  <div class="top-bar">
+    <button class="active" id="audio-output-btn">🔊 Audio Output</button>
+    <div class="lang-buttons">
+      <button class="lang-btn active">English ↔ German</button>
+      <button class="lang-btn">German ↔ French</button>
+      <button class="lang-btn">French ↔ English</button>
+    </div>
+    <button id="audio-input-btn">🎙️ Audio Input</button>
+  </div>
+
+  <!-- Panels -->
+  <div class="main">
+    <div class="panel" id="left-panel">
+      <div class="message from-human">Hello!</div>
+    </div>
+    <div class="divider"></div>
+    <div class="panel" id="right-panel">
+      <div id="typing-area" contenteditable="true"></div>
+    </div>
+  </div>
+
+<script>
+  const typingArea = document.getElementById('typing-area');
+
+  window.onload = () => {
+    typingArea.focus();
+  };
+
+  typingArea.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const text = this.innerText.trim();
+      if (text) {
+        console.log("Submitted:", text);
+        this.innerText = '';
+      }
+    }
+  });
+
+  // Toggle Audio Output
+  const audioBtn = document.getElementById('audio-output-btn');
+  audioBtn.addEventListener('click', () => {
+    audioBtn.classList.toggle('active');
+  });
+
+  // Toggle Language Selection
+  const langButtons = document.querySelectorAll('.lang-btn');
+  langButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      langButtons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  // Toggle Audio Input Selection
+  const audioInputBtn = document.getElementById('audio-input-btn');
+  audioInputBtn.addEventListener('click', () => {
+    audioInputBtn.classList.toggle('active');
+  });
+</script>
+
+</body>
+</html>
