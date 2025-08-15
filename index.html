@@ -206,7 +206,7 @@
   <div class="top-bar">
     <div class="left-group">
       <button id="lang-btn" class="lang-btn" title="Select Language" aria-label="Select Language">
-        <span id="selected-lang">EN → DE</span>
+        <span id="selected-lang">EN ↔ DE</span>
       </button>
     </div>
     <div class="brand">frende</div>
@@ -232,9 +232,9 @@
     <div class="card">
       <!-- Language chips -->
       <div class="chips" id="lang-chips">
-        <div class="chip" data-pair="EN → DE">EN → DE</div>
-        <div class="chip" data-pair="DE → FR">DE → FR</div>
-        <div class="chip" data-pair="FR → EN">FR → EN</div>
+        <div class="chip" data-pair="EN ↔ DE">EN ↔ DE</div>
+        <div class="chip" data-pair="DE ↔ FR">DE ↔ FR</div>
+        <div class="chip" data-pair="FR ↔ EN">FR ↔ EN</div>
       </div>
     </div>
   </div>
@@ -251,14 +251,15 @@
   const themeDarkBtn = document.getElementById('theme-dark');
 
   const API_BASE = 'http://localhost:5000';
-  const LANG_DIRECTIONS = {
-    'EN → DE': ['en-de', 'de-en'],
-    'DE → FR': ['de-fr', 'fr-de'],
-    'FR → EN': ['fr-en', 'en-fr']
+
+  // Updated language pairs for bidirectional translation
+  const LANGUAGE_PAIRS = {
+    'EN ↔ DE': 'EN ↔ DE',
+    'DE ↔ FR': 'DE ↔ FR', 
+    'FR ↔ EN': 'FR ↔ EN'
   };
 
-  let currentLangPair = 'EN → DE';
-  let currentDirection = LANG_DIRECTIONS[currentLangPair][0];
+  let currentLangPair = 'EN ↔ DE';
 
   function getSystemTheme() {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
@@ -277,9 +278,8 @@
     const savedLang = localStorage.getItem('langPair');
     const savedTheme = localStorage.getItem('theme');
 
-    if (savedLang && LANG_DIRECTIONS[savedLang]) {
+    if (savedLang && LANGUAGE_PAIRS[savedLang]) {
       currentLangPair = savedLang;
-      currentDirection = LANG_DIRECTIONS[savedLang][0];
     }
     selectedLangLabel.textContent = currentLangPair;
 
@@ -316,7 +316,6 @@
     chips.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
     chip.classList.add('active');
     currentLangPair = chip.dataset.pair;
-    currentDirection = LANG_DIRECTIONS[currentLangPair][0];
     selectedLangLabel.textContent = currentLangPair;
     saveSettings();
     closeLangModal(); // Auto-close and focus
@@ -363,16 +362,23 @@
     }
   });
 
-  // Translation handling
-  async function translateText(text, direction) {
+  // Updated translation handling with auto-detection
+  async function translateText(text, languagePair) {
     try {
       const res = await fetch(`${API_BASE}/translate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, direction })
+        body: JSON.stringify({ 
+          text: text, 
+          language_pair: languagePair  // Changed from 'direction'
+        })
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
+      
+      // Log which direction was actually used
+      console.log(`Auto-detected direction: ${data.direction_used}`);
+      
       return data.translation;
     } catch (e) {
       console.error(e);
@@ -399,14 +405,18 @@
       e.preventDefault();
       const text = typingArea.innerText.trim();
       if (!text) return;
+      
       const humanMessage = addMessage(text, true);
       leftPanel.insertBefore(humanMessage, typingArea);
       typingArea.innerText = '';
       leftPanel.scrollTop = leftPanel.scrollHeight;
       rightPanel.scrollTop = rightPanel.scrollHeight;
-      const translation = await translateText(text, currentDirection);
+      
+      // Use the new auto-detection translation
+      const translation = await translateText(text, currentLangPair);
       const aiMessage = addMessage(translation, false);
       rightPanel.appendChild(aiMessage);
+      
       // Align heights
       const hLeft = humanMessage.offsetHeight;
       const hRight = aiMessage.offsetHeight;
@@ -417,6 +427,7 @@
         const spacer = createSpacer(hRight - hLeft);
         leftPanel.insertBefore(spacer, typingArea);
       }
+      
       leftPanel.scrollTop = leftPanel.scrollHeight;
       rightPanel.scrollTop = rightPanel.scrollHeight;
     }
