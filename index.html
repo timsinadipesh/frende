@@ -125,18 +125,103 @@
 
 <script>
   const typingArea = document.getElementById('typing-area');
+  const rightPanel = document.getElementById('right-panel');
+  const API_BASE = 'http://localhost:5000';
+  
+  // Language direction mapping
+  const LANG_DIRECTIONS = {
+    'EN ↔ DE': ['en-de', 'de-en'],
+    'DE ↔ FR': ['de-fr', 'fr-de'],
+    'FR ↔ EN': ['fr-en', 'en-fr']
+  };
+
+  let currentDirection = 'en-de'; // Default direction
 
   window.onload = () => {
     typingArea.focus();
+    checkServerHealth();
   };
 
-  typingArea.addEventListener('keydown', function(e) {
+  async function checkServerHealth() {
+    try {
+      const response = await fetch(`${API_BASE}/health`);
+      if (response.ok) {
+        console.log('Translation server ready');
+      }
+    } catch (error) {
+      console.warn('Translation server not available');
+    }
+  }
+
+  async function translateText(text, direction) {
+    try {
+      const response = await fetch(`${API_BASE}/translate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text, direction })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const result = await response.json();
+      return result.translation;
+    } catch (error) {
+      console.error('Translation failed:', error);
+      return `Translation error: ${error.message}`;
+    }
+  }
+
+  function addMessage(text, isHuman = true) {
+    const message = document.createElement('div');
+    message.className = `message ${isHuman ? 'from-human' : 'from-ai'}`;
+    message.textContent = text;
+    
+    if (isHuman) {
+      // Add to left panel (human input)
+      const leftPanel = document.getElementById('left-panel');
+      leftPanel.insertBefore(message, typingArea);
+    } else {
+      // Add to right panel (AI response)
+      rightPanel.appendChild(message);
+    }
+    
+    // Scroll to bottom
+    rightPanel.scrollTop = rightPanel.scrollHeight;
+  }
+
+  function getCurrentLanguagePair() {
+    const activeBtn = document.querySelector('.lang-btn.active');
+    return activeBtn ? activeBtn.textContent : 'EN ↔ DE';
+  }
+
+  function detectLanguageDirection(text) {
+    // Simple heuristic: if text contains common German/French patterns, auto-detect direction
+    const langPair = getCurrentLanguagePair();
+    const directions = LANG_DIRECTIONS[langPair];
+    
+    // Default to first direction, could add more sophisticated detection
+    return directions[0];
+  }
+
+  typingArea.addEventListener('keydown', async function(e) {
     if (e.key === 'Enter') {
       e.preventDefault();
       const text = this.innerText.trim();
       if (text) {
-        console.log("Submitted:", text);
+        // Add user message
+        addMessage(text, true);
         this.innerText = '';
+        
+        // Detect direction and translate
+        const direction = detectLanguageDirection(text);
+        const translation = await translateText(text, direction);
+        
+        // Add translation
+        addMessage(translation, false);
       }
     }
   });
@@ -147,12 +232,16 @@
     audioBtn.classList.toggle('active');
   });
 
-  // Toggle Language Selection
+  // Language Selection
   const langButtons = document.querySelectorAll('.lang-btn');
   langButtons.forEach(btn => {
     btn.addEventListener('click', () => {
       langButtons.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
+      
+      // Update current direction
+      const langPair = btn.textContent;
+      currentDirection = LANG_DIRECTIONS[langPair][0];
     });
   });
 
@@ -164,7 +253,6 @@
 
   // Focus typing area when clicking anywhere outside buttons
   document.addEventListener('click', (e) => {
-    // Check if click is on a button or inside a button
     if (!e.target.closest('button')) {
       typingArea.focus();
     }
