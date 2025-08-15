@@ -84,11 +84,10 @@
     align-self: flex-start;
   }
 
-  /* Fixed typing area */
+  /* Updated typing area for left panel */
   #typing-area {
-    text-align: right;
-    padding-right: 30px;
-    padding-top: 10px;
+    text-align: left;
+    padding: 10px;
     outline: none;
     border: none;
     background: transparent;
@@ -104,23 +103,23 @@
 
   <!-- Top Bar -->
   <div class="top-bar">
-    <button class="active" id="audio-output-btn">🔊 Audio Output</button>
-    <div class="lang-buttons">
-      <button class="lang-btn active">English ↔ German</button>
-      <button class="lang-btn">German ↔ French</button>
-      <button class="lang-btn">French ↔ English</button>
-    </div>
     <button id="audio-input-btn">🎙️ Audio Input</button>
+    <div class="lang-buttons">
+      <button class="lang-btn active">EN ↔ DE</button>
+      <button class="lang-btn">DE ↔ FR</button>
+      <button class="lang-btn">FR ↔ EN</button>
+    </div>
+    <button class="active" id="audio-output-btn">🔊 Audio Output</button>
   </div>
 
   <!-- Panels -->
   <div class="main">
     <div class="panel" id="left-panel">
-      <div class="message from-human">Hello!</div>
+      <div id="typing-area" contenteditable="true"></div>
     </div>
     <div class="divider"></div>
     <div class="panel" id="right-panel">
-      <div id="typing-area" contenteditable="true"></div>
+      <div class="message from-ai">Hello!</div>
     </div>
   </div>
 
@@ -161,6 +160,14 @@
   const audioInputBtn = document.getElementById('audio-input-btn');
   audioInputBtn.addEventListener('click', () => {
     audioInputBtn.classList.toggle('active');
+  });
+
+  // Focus typing area when clicking anywhere outside buttons
+  document.addEventListener('click', (e) => {
+    // Check if click is on a button or inside a button
+    if (!e.target.closest('button')) {
+      typingArea.focus();
+    }
   });
 </script>
 
