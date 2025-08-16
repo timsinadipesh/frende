@@ -1,4 +1,4 @@
-torch==2.4.1
+torch==2.3.1
 transformers==4.44.2
 tokenizers==0.19.1
 flask==2.3.2
@@ -6,3 +6,4 @@ flask-cors==4.0.0
 sentencepiece==0.1.99
 sacremoses==0.1.1
 lingua-language-detector==2.0.2
+librosa==0.10.1

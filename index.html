@@ -11,6 +11,8 @@
     --panel-bg: #f8f8f8;
     --message-human: rgba(0,0,0,0.1);
     --message-ai: rgba(0,0,0,0.05);
+    --accent-color: #2196f3;
+    --recording-color: #f44336;
   }
   [data-theme="dark"] {
     --bg-color: #121212;
@@ -18,6 +20,8 @@
     --panel-bg: #1e1e1e;
     --message-human: rgba(255,255,255,0.25);
     --message-ai: rgba(0,0,0,0.25);
+    --accent-color: #64b5f6;
+    --recording-color: #ef5350;
   }
 
   * { box-sizing: border-box; }
@@ -31,7 +35,6 @@
     color: var(--text-color);
   }
 
-  /* Top Bar */
   .top-bar {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
@@ -111,7 +114,6 @@
     background: rgba(0,0,0,0.05);
   }
 
-  /* Panels */
   .main { flex: 1; display: flex; overflow: hidden; }
   .panel {
     flex: 1;
@@ -121,8 +123,61 @@
     overflow-y: auto;
     background: var(--bg-color);
     align-items: center;
+    position: relative;
   }
-  .divider { width: 1px; background: rgba(0,0,0,0.1); }
+  .divider { 
+    width: 1px; 
+    background: rgba(0,0,0,0.1); 
+    position: relative;
+  }
+
+  .audio-btn {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 10;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 2px solid var(--accent-color);
+    background: var(--bg-color);
+    color: var(--accent-color);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    transition: all .2s ease;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  }
+
+  .audio-btn:hover {
+    transform: translate(-50%, -50%) scale(1.05);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
+
+  .audio-btn.recording {
+    border-color: var(--recording-color);
+    color: var(--recording-color);
+    animation: pulse 1.5s infinite;
+  }
+
+  .audio-btn.processing {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+
+  @keyframes spin {
+    from { transform: translate(-50%, -50%) rotate(0deg); }
+    to { transform: translate(-50%, -50%) rotate(360deg); }
+  }
 
   .message {
     padding: 8px 12px;
@@ -133,6 +188,11 @@
   }
   .from-human { background: var(--message-human); }
   .from-ai { background: var(--message-ai); }
+
+  .message.transcribed {
+    border-left: 3px solid var(--accent-color);
+    padding-left: 15px;
+  }
 
   #typing-area {
     text-align: left;
@@ -154,7 +214,6 @@
     max-width: 80%;
   }
 
-  /* Language Modal */
   .modal {
     position: fixed;
     inset: 0;
@@ -198,15 +257,33 @@
     border-color: #2196f3;
     color: #0d47a1;
   }
+
+  .status {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: var(--panel-bg);
+    color: var(--text-color);
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    opacity: 0;
+    transition: opacity .3s ease;
+    z-index: 100;
+  }
+
+  .status.show {
+    opacity: 1;
+  }
 </style>
 </head>
 <body>
 
-  <!-- Top Bar -->
   <div class="top-bar">
     <div class="left-group">
       <button id="lang-btn" class="lang-btn" title="Select Language" aria-label="Select Language">
-        <span id="selected-lang">EN ↔ DE</span>
+        <span id="selected-lang">EN → DE</span>
       </button>
     </div>
     <div class="brand">frende</div>
@@ -218,26 +295,29 @@
     </div>
   </div>
 
-  <!-- Panels -->
   <div class="main">
     <div class="panel" id="left-panel">
       <div id="typing-area" contenteditable="true"></div>
     </div>
-    <div class="divider"></div>
+    <div class="divider">
+      <button id="audio-btn" class="audio-btn" title="Record Audio" aria-label="Record Audio">
+        🎤
+      </button>
+    </div>
     <div class="panel" id="right-panel"></div>
   </div>
 
-  <!-- Language Selection Modal -->
   <div id="lang-modal" class="modal">
     <div class="card">
-      <!-- Language chips -->
       <div class="chips" id="lang-chips">
-        <div class="chip" data-pair="EN ↔ DE">EN ↔ DE</div>
-        <div class="chip" data-pair="DE ↔ FR">DE ↔ FR</div>
-        <div class="chip" data-pair="FR ↔ EN">FR ↔ EN</div>
+        <div class="chip" data-pair="EN → DE">EN → DE</div>
+        <div class="chip" data-pair="DE → FR">DE → FR</div>
+        <div class="chip" data-pair="FR → EN">FR → EN</div>
       </div>
     </div>
   </div>
+
+  <div id="status" class="status"></div>
 
 <script>
   const typingArea = document.getElementById('typing-area');
@@ -249,17 +329,30 @@
   const chips = document.getElementById('lang-chips');
   const themeLightBtn = document.getElementById('theme-light');
   const themeDarkBtn = document.getElementById('theme-dark');
+  const audioBtn = document.getElementById('audio-btn');
+  const status = document.getElementById('status');
 
   const API_BASE = 'http://localhost:5000';
 
-  // Updated language pairs for bidirectional translation
   const LANGUAGE_PAIRS = {
-    'EN ↔ DE': 'EN ↔ DE',
-    'DE ↔ FR': 'DE ↔ FR', 
-    'FR ↔ EN': 'FR ↔ EN'
+    'EN → DE': 'EN → DE',
+    'DE → FR': 'DE → FR', 
+    'FR → EN': 'FR → EN'
   };
 
-  let currentLangPair = 'EN ↔ DE';
+  let currentLangPair = 'EN → DE';
+  let mediaRecorder = null;
+  let audioChunks = [];
+  let isRecording = false;
+  let mediaStream = null; // Keep track of the stream
+
+  function showStatus(message) {
+    status.textContent = message;
+    status.classList.add('show');
+    setTimeout(() => {
+      status.classList.remove('show');
+    }, 3000);
+  }
 
   function getSystemTheme() {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
@@ -267,13 +360,10 @@
 
   function applyTheme(theme) {
     document.documentElement.dataset.theme = theme;
-    
-    // Update button states
     themeLightBtn.classList.toggle('active', theme === 'light');
     themeDarkBtn.classList.toggle('active', theme === 'dark');
   }
 
-  // Load saved settings
   function loadSettings() {
     const savedLang = localStorage.getItem('langPair');
     const savedTheme = localStorage.getItem('theme');
@@ -283,7 +373,6 @@
     }
     selectedLangLabel.textContent = currentLangPair;
 
-    // Use saved theme or default to system theme
     const themeToApply = savedTheme || getSystemTheme();
     applyTheme(themeToApply);
 
@@ -308,7 +397,6 @@
 
   langBtn.addEventListener('click', openLangModal);
 
-  // One-click language selection
   chips.addEventListener('click', e => {
     const chip = e.target.closest('.chip');
     if (!chip) return;
@@ -318,10 +406,9 @@
     currentLangPair = chip.dataset.pair;
     selectedLangLabel.textContent = currentLangPair;
     saveSettings();
-    closeLangModal(); // Auto-close and focus
+    closeLangModal();
   });
 
-  // Theme buttons
   themeLightBtn.addEventListener('click', () => {
     applyTheme('light');
     saveTheme('light');
@@ -339,10 +426,9 @@
 
   window.addEventListener('DOMContentLoaded', () => {
     loadSettings();
-    typingArea.focus(); // Auto-focus on page load
+    typingArea.focus();
   });
 
-  // Sync scrolls
   leftPanel.addEventListener('scroll', () => {
     rightPanel.scrollTop = leftPanel.scrollTop;
   });
@@ -350,7 +436,6 @@
     leftPanel.scrollTop = rightPanel.scrollTop;
   });
 
-  // Focus typing area on click anywhere except interactive elements
   document.addEventListener('click', e => {
     if (modal.style.display !== 'flex' &&
         !e.target.closest('button') &&
@@ -362,7 +447,270 @@
     }
   });
 
-  // Updated translation handling with auto-detection
+  async function startRecording() {
+    console.log('startRecording called, isRecording:', isRecording);
+    
+    if (isRecording) {
+      stopRecording();
+      return;
+    }
+    
+    try {
+      // Request microphone access with proper settings
+      console.log('Requesting microphone access...');
+      mediaStream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          sampleRate: 16000 // Use 16kHz as it's standard for speech recognition
+        } 
+      });
+      
+      console.log('Microphone access granted, stream tracks:', mediaStream.getTracks().length);
+      
+      // Clear previous audio chunks
+      audioChunks = [];
+      
+      // Try different MIME types in order of preference
+      let mimeType = null;
+      const typesToTry = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/ogg;codecs=opus',
+        'audio/ogg',
+        'audio/mp4',
+        'audio/wav'
+      ];
+      
+      for (const type of typesToTry) {
+        if (MediaRecorder.isTypeSupported(type)) {
+          mimeType = type;
+          break;
+        }
+      }
+      
+      console.log('Using MIME type:', mimeType || 'browser default');
+      
+      // Create MediaRecorder with proper options
+      const options = {};
+      if (mimeType) options.mimeType = mimeType;
+      
+      mediaRecorder = new MediaRecorder(mediaStream, options);
+      
+      console.log('MediaRecorder created successfully');
+      console.log('MediaRecorder state:', mediaRecorder.state);
+      console.log('MediaRecorder mimeType:', mediaRecorder.mimeType);
+      
+      // Set up event handlers BEFORE starting
+      mediaRecorder.ondataavailable = (event) => {
+        console.log('Data available - size:', event.data.size, 'bytes, type:', event.data.type);
+        if (event.data && event.data.size > 0) {
+          audioChunks.push(event.data);
+          console.log('Added chunk, total chunks:', audioChunks.length);
+        } else {
+          console.warn('Received empty data chunk');
+        }
+      };
+      
+      mediaRecorder.onstop = () => {
+        console.log('MediaRecorder stopped, processing audio...');
+        processRecordedAudio();
+      };
+      
+      mediaRecorder.onerror = (event) => {
+        console.error('MediaRecorder error:', event.error);
+        showStatus('Recording error: ' + event.error.message);
+        resetRecordingState();
+      };
+      
+      mediaRecorder.onstart = () => {
+        console.log('MediaRecorder started successfully');
+      };
+      
+      // Start recording with NO interval parameter to get all data in one chunk
+      console.log('Starting MediaRecorder...');
+      mediaRecorder.start(); // Don't specify interval - let it collect all data
+      
+      // Update UI
+      isRecording = true;
+      audioBtn.classList.add('recording');
+      audioBtn.textContent = '⏹';
+      audioBtn.title = 'Stop Recording';
+      showStatus('Recording... Click to stop');
+      
+      console.log('Recording initialization complete');
+      
+    } catch (error) {
+      console.error('Error starting recording:', error);
+      showStatus('Could not access microphone: ' + error.message);
+      resetRecordingState();
+    }
+  }
+
+  function stopRecording() {
+    console.log('stopRecording called');
+    
+    if (!isRecording || !mediaRecorder) {
+      console.log('Not recording or no mediaRecorder');
+      return;
+    }
+    
+    console.log('Stopping MediaRecorder, current state:', mediaRecorder.state);
+    
+    if (mediaRecorder.state === 'recording') {
+      mediaRecorder.stop();
+    }
+    
+    // Update UI immediately
+    isRecording = false;
+    audioBtn.classList.remove('recording');
+    audioBtn.classList.add('processing');
+    audioBtn.textContent = '⏳';
+    audioBtn.title = 'Processing...';
+    showStatus('Processing audio...');
+  }
+
+  function processRecordedAudio() {
+    console.log('processRecordedAudio called');
+    console.log('Audio chunks:', audioChunks.length);
+    
+    if (audioChunks.length === 0) {
+      console.error('No audio chunks available');
+      showStatus('No audio data recorded - please speak during recording');
+      resetRecordingState();
+      return;
+    }
+    
+    // Calculate total size
+    const totalSize = audioChunks.reduce((sum, chunk) => sum + chunk.size, 0);
+    console.log('Total audio size:', totalSize, 'bytes');
+    
+    if (totalSize === 0) {
+      console.error('Total audio size is 0');
+      showStatus('No audio detected - please speak louder');
+      resetRecordingState();
+      return;
+    }
+    
+    // Use the actual mimeType from the recorder, with fallback
+    let mimeType = mediaRecorder.mimeType;
+    if (!mimeType) {
+      mimeType = 'audio/webm'; // Default fallback
+    }
+    
+    console.log('Creating blob with MIME type:', mimeType);
+    
+    // Create blob from chunks
+    const audioBlob = new Blob(audioChunks, { type: mimeType });
+    
+    console.log('Created audio blob:');
+    console.log('- Size:', audioBlob.size, 'bytes');
+    console.log('- Type:', audioBlob.type);
+    console.log('- Chunks used:', audioChunks.length);
+    
+    // Validate the blob before sending
+    if (audioBlob.size === 0) {
+      console.error('Created blob is empty despite having chunks');
+      showStatus('Audio processing failed - blob is empty');
+      resetRecordingState();
+      return;
+    }
+    
+    // Send to server
+    sendAudioToServer(audioBlob);
+  }
+
+  async function sendAudioToServer(audioBlob) {
+    try {
+      console.log('Sending audio to server, blob size:', audioBlob.size);
+      
+      const formData = new FormData();
+      formData.append('audio', audioBlob, 'recording.webm');
+      formData.append('language_pair', currentLangPair);
+      
+      console.log('FormData created, sending request...');
+      
+      const response = await fetch(`${API_BASE}/transcribe`, {
+        method: 'POST',
+        body: formData
+      });
+      
+      console.log('Server response status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Server error:', response.status, errorText);
+        throw new Error(`Server error ${response.status}: ${errorText}`);
+      }
+      
+      const result = await response.json();
+      console.log('Transcription result:', result);
+      
+      // Add transcribed message to left panel
+      const humanMessage = addMessage(result.transcribed_text, true, true);
+      leftPanel.insertBefore(humanMessage, typingArea);
+      leftPanel.scrollTop = leftPanel.scrollHeight;
+      
+      // Add translation to right panel
+      const aiMessage = addMessage(result.translation, false);
+      rightPanel.appendChild(aiMessage);
+      
+      // Balance heights
+      const hLeft = humanMessage.offsetHeight;
+      const hRight = aiMessage.offsetHeight;
+      if (hLeft > hRight) {
+        const spacer = createSpacer(hLeft - hRight);
+        rightPanel.appendChild(spacer);
+      } else if (hRight > hLeft) {
+        const spacer = createSpacer(hRight - hLeft);
+        leftPanel.insertBefore(spacer, typingArea);
+      }
+      
+      // Sync scroll
+      leftPanel.scrollTop = leftPanel.scrollHeight;
+      rightPanel.scrollTop = rightPanel.scrollHeight;
+      
+      showStatus('Audio transcribed and translated!');
+      
+    } catch (error) {
+      console.error('Error sending audio to server:', error);
+      showStatus('Transcription failed: ' + error.message);
+    } finally {
+      resetRecordingState();
+    }
+  }
+
+  function resetRecordingState() {
+    console.log('resetRecordingState called');
+    
+    // Stop media stream
+    if (mediaStream) {
+      mediaStream.getTracks().forEach(track => {
+        console.log('Stopping track:', track.kind, track.label);
+        track.stop();
+      });
+      mediaStream = null;
+    }
+    
+    // Reset MediaRecorder
+    mediaRecorder = null;
+    
+    // Clear audio chunks
+    audioChunks = [];
+    
+    // Reset state
+    isRecording = false;
+    
+    // Reset UI
+    audioBtn.classList.remove('recording', 'processing');
+    audioBtn.textContent = '🎤';
+    audioBtn.title = 'Record Audio';
+  }
+
+  // Event listener for the audio button
+  audioBtn.addEventListener('click', startRecording);
+
   async function translateText(text, languagePair) {
     try {
       const res = await fetch(`${API_BASE}/translate`, {
@@ -370,13 +718,12 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           text: text, 
-          language_pair: languagePair  // Changed from 'direction'
+          language_pair: languagePair
         })
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       
-      // Log which direction was actually used
       console.log(`Auto-detected direction: ${data.direction_used}`);
       
       return data.translation;
@@ -393,9 +740,12 @@
     return spacer;
   }
 
-  function addMessage(text, isHuman = true) {
+  function addMessage(text, isHuman = true, isTranscribed = false) {
     const el = document.createElement('div');
     el.className = `message ${isHuman ? 'from-human' : 'from-ai'}`;
+    if (isTranscribed) {
+      el.classList.add('transcribed');
+    }
     el.textContent = text;
     return el;
   }
@@ -412,12 +762,10 @@
       leftPanel.scrollTop = leftPanel.scrollHeight;
       rightPanel.scrollTop = rightPanel.scrollHeight;
       
-      // Use the new auto-detection translation
       const translation = await translateText(text, currentLangPair);
       const aiMessage = addMessage(translation, false);
       rightPanel.appendChild(aiMessage);
       
-      // Align heights
       const hLeft = humanMessage.offsetHeight;
       const hRight = aiMessage.offsetHeight;
       if (hLeft > hRight) {
