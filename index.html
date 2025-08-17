@@ -13,6 +13,7 @@
     --message-ai: rgba(0,0,0,0.05);
     --accent-color: #2196f3;
     --recording-color: #f44336;
+    --success-color: #4caf50;
   }
   [data-theme="dark"] {
     --bg-color: #121212;
@@ -22,6 +23,7 @@
     --message-ai: rgba(0,0,0,0.25);
     --accent-color: #64b5f6;
     --recording-color: #ef5350;
+    --success-color: #66bb6a;
   }
 
   * { box-sizing: border-box; }
@@ -185,13 +187,71 @@
     border-radius: 16px;
     max-width: 80%;
     line-height: 1.4;
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
+  
+  .message-content {
+    flex: 1;
+  }
+  
+  .message-actions {
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity .2s ease;
+  }
+  
+  .message:hover .message-actions {
+    opacity: 1;
+  }
+  
   .from-human { background: var(--message-human); }
   .from-ai { background: var(--message-ai); }
 
   .message.transcribed {
     border-left: 3px solid var(--accent-color);
     padding-left: 15px;
+  }
+
+  .play-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1px solid var(--accent-color);
+    background: var(--bg-color);
+    color: var(--accent-color);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    transition: all .2s ease;
+    flex-shrink: 0;
+  }
+
+  .play-btn:hover {
+    background: var(--accent-color);
+    color: var(--bg-color);
+    transform: scale(1.1);
+  }
+
+  .play-btn.playing {
+    background: var(--success-color);
+    border-color: var(--success-color);
+    color: white;
+    animation: pulse-play 1s infinite;
+  }
+
+  .play-btn.loading {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes pulse-play {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
   }
 
   #typing-area {
@@ -344,7 +404,9 @@
   let mediaRecorder = null;
   let audioChunks = [];
   let isRecording = false;
-  let mediaStream = null; // Keep track of the stream
+  let mediaStream = null;
+  let currentlyPlayingAudio = null;
+  let currentlyPlayingButton = null;
 
   function showStatus(message) {
     status.textContent = message;
@@ -446,6 +508,102 @@
       typingArea.focus();
     }
   });
+
+  async function playTTS(text, language, button) {
+    console.log('playTTS called:', { text: text.substring(0, 50), language });
+    
+    try {
+      // Stop any currently playing audio
+      if (currentlyPlayingAudio) {
+        currentlyPlayingAudio.pause();
+        currentlyPlayingAudio.currentTime = 0;
+        if (currentlyPlayingButton) {
+          currentlyPlayingButton.classList.remove('playing');
+          currentlyPlayingButton.textContent = '🔊';
+        }
+      }
+
+      // If clicking the same button that was playing, just stop
+      if (currentlyPlayingButton === button && button.classList.contains('playing')) {
+        currentlyPlayingButton = null;
+        currentlyPlayingAudio = null;
+        return;
+      }
+
+      // Set loading state
+      button.classList.add('loading');
+      button.textContent = '⏳';
+
+      // Make TTS request
+      const response = await fetch(`${API_BASE}/tts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          text: text,
+          language: language
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`TTS failed: ${errorData.error || response.statusText}`);
+      }
+
+      // Get audio blob
+      const audioBlob = await response.blob();
+      console.log('Received audio blob, size:', audioBlob.size);
+
+      if (audioBlob.size === 0) {
+        throw new Error('Received empty audio data');
+      }
+
+      // Create audio URL and play
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+
+      // Set up audio event listeners
+      audio.onloadeddata = () => {
+        console.log('Audio loaded, duration:', audio.duration);
+      };
+
+      audio.onplay = () => {
+        console.log('Audio playback started');
+        button.classList.remove('loading');
+        button.classList.add('playing');
+        button.textContent = '⏸';
+        currentlyPlayingAudio = audio;
+        currentlyPlayingButton = button;
+      };
+
+      audio.onended = () => {
+        console.log('Audio playback ended');
+        button.classList.remove('playing');
+        button.textContent = '🔊';
+        URL.revokeObjectURL(audioUrl);
+        currentlyPlayingAudio = null;
+        currentlyPlayingButton = null;
+      };
+
+      audio.onerror = (e) => {
+        console.error('Audio playback error:', e);
+        button.classList.remove('loading', 'playing');
+        button.textContent = '🔊';
+        URL.revokeObjectURL(audioUrl);
+        showStatus('Audio playback failed');
+      };
+
+      // Start playing
+      await audio.play();
+
+    } catch (error) {
+      console.error('TTS error:', error);
+      button.classList.remove('loading', 'playing');
+      button.textContent = '🔊';
+      showStatus(`TTS error: ${error.message}`);
+    }
+  }
 
   async function startRecording() {
     console.log('startRecording called, isRecording:', isRecording);
@@ -652,8 +810,8 @@
       leftPanel.insertBefore(humanMessage, typingArea);
       leftPanel.scrollTop = leftPanel.scrollHeight;
       
-      // Add translation to right panel
-      const aiMessage = addMessage(result.translation, false);
+      // Add translation to right panel with play button
+      const aiMessage = addMessage(result.translation, false, false, result.target_language);
       rightPanel.appendChild(aiMessage);
       
       // Balance heights
@@ -726,10 +884,10 @@
       
       console.log(`Auto-detected direction: ${data.direction_used}`);
       
-      return data.translation;
+      return data;
     } catch (e) {
       console.error(e);
-      return `Translation error: ${e.message}`;
+      return { translation: `Translation error: ${e.message}`, target_language: 'en' };
     }
   }
 
@@ -740,13 +898,36 @@
     return spacer;
   }
 
-  function addMessage(text, isHuman = true, isTranscribed = false) {
+  function addMessage(text, isHuman = true, isTranscribed = false, targetLanguage = null) {
     const el = document.createElement('div');
     el.className = `message ${isHuman ? 'from-human' : 'from-ai'}`;
     if (isTranscribed) {
       el.classList.add('transcribed');
     }
-    el.textContent = text;
+    
+    // Create message content
+    const contentEl = document.createElement('div');
+    contentEl.className = 'message-content';
+    contentEl.textContent = text;
+    el.appendChild(contentEl);
+    
+    // Add actions for AI messages (translations)
+    if (!isHuman && targetLanguage) {
+      const actionsEl = document.createElement('div');
+      actionsEl.className = 'message-actions';
+      
+      const playBtn = document.createElement('button');
+      playBtn.className = 'play-btn';
+      playBtn.textContent = '🔊';
+      playBtn.title = 'Play audio';
+      playBtn.addEventListener('click', () => {
+        playTTS(text, targetLanguage, playBtn);
+      });
+      
+      actionsEl.appendChild(playBtn);
+      el.appendChild(actionsEl);
+    }
+    
     return el;
   }
 
@@ -762,8 +943,8 @@
       leftPanel.scrollTop = leftPanel.scrollHeight;
       rightPanel.scrollTop = rightPanel.scrollHeight;
       
-      const translation = await translateText(text, currentLangPair);
-      const aiMessage = addMessage(translation, false);
+      const translationData = await translateText(text, currentLangPair);
+      const aiMessage = addMessage(translationData.translation, false, false, translationData.target_language);
       rightPanel.appendChild(aiMessage);
       
       const hLeft = humanMessage.offsetHeight;

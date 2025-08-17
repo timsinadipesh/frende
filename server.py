@@ -2,22 +2,28 @@
 """
 Local translation server using Helsinki-NLP Opus-MT models
 Supports EN<->DE, DE<->FR, FR<->EN translation pairs with automatic language detection
-Now includes Whisper audio transcription
+Now includes Whisper audio transcription and Piper TTS
 """
 
 import sys
 import logging
 import tempfile
 import os
+import platform
+import subprocess
+import requests
+import zipfile
+import tarfile
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 import torch
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, WhisperProcessor, WhisperForConditionalGeneration
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from flask import send_from_directory
 import librosa
 import numpy as np
+import shutil
 
 try:
     from lingua import Language, LanguageDetectorBuilder
@@ -52,6 +58,210 @@ LANGUAGE_PAIRS = {
     'DE ↔ FR': ['de', 'fr'], 
     'FR ↔ EN': ['fr', 'en']
 }
+
+# Highest quality, most natural Piper voices
+PIPER_VOICES = {
+    'en': {
+        'name': 'en_US-amy-medium',
+        'url': 'https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/amy/medium/en_US-amy-medium.onnx',
+        'config_url': 'https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/amy/medium/en_US-amy-medium.onnx.json'
+    },
+    'de': {
+        'name': 'de_DE-thorsten-medium',
+        'url': 'https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/de/de_DE/thorsten/medium/de_DE-thorsten-medium.onnx',
+        'config_url': 'https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/de/de_DE/thorsten/medium/de_DE-thorsten-medium.onnx.json'
+    },
+    'fr': {
+        'name': 'fr_FR-siwis-medium',
+        'url': 'https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/fr/fr_FR/siwis/medium/fr_FR-siwis-medium.onnx',
+        'config_url': 'https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/fr/fr_FR/siwis/medium/fr_FR-siwis-medium.onnx.json'
+    }
+}
+
+class TTSService:
+    def __init__(self):
+        self.piper_dir = Path.home() / '.cache' / 'piper'
+        self.piper_dir.mkdir(parents=True, exist_ok=True)
+        self.piper_executable = None
+        self.voices_dir = self.piper_dir / 'voices'
+        self.voices_dir.mkdir(exist_ok=True)
+        self.audio_cache = {}
+        
+    def get_piper_download_info(self):
+        """Get the appropriate Piper download URL for current OS"""
+        system = platform.system().lower()
+        machine = platform.machine().lower()
+        
+        if system == 'linux':
+            if 'x86_64' in machine or 'amd64' in machine:
+                return {
+                    'url': 'https://github.com/rhasspy/piper/releases/latest/download/piper_linux_x86_64.tar.gz',
+                    'executable': 'piper'
+                }
+            elif 'aarch64' in machine or 'arm64' in machine:
+                return {
+                    'url': 'https://github.com/rhasspy/piper/releases/latest/download/piper_linux_aarch64.tar.gz',
+                    'executable': 'piper'
+                }
+        elif system == 'darwin':  # macOS
+            return {
+                'url': 'https://github.com/rhasspy/piper/releases/latest/download/piper_macos_x64.tar.gz',
+                'executable': 'piper'
+            }
+        elif system == 'windows':
+            return {
+                'url': 'https://github.com/rhasspy/piper/releases/latest/download/piper_windows_amd64.zip',
+                'executable': 'piper.exe'
+            }
+        
+        raise RuntimeError(f"Unsupported platform: {system} {machine}")
+    
+    def download_and_extract(self, url: str, extract_to: Path):
+        """Download and extract archive"""
+        logger.info(f"Downloading from {url}")
+        
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
+        
+        # Download to temporary file
+        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+            for chunk in response.iter_content(chunk_size=8192):
+                temp_file.write(chunk)
+            temp_file_path = temp_file.name
+        
+        try:
+            # Extract based on file extension
+            if url.endswith('.tar.gz'):
+                with tarfile.open(temp_file_path, 'r:gz') as tar:
+                    tar.extractall(extract_to)
+            elif url.endswith('.zip'):
+                with zipfile.ZipFile(temp_file_path, 'r') as zip_file:
+                    zip_file.extractall(extract_to)
+            else:
+                raise ValueError(f"Unsupported archive format: {url}")
+                
+        finally:
+            os.unlink(temp_file_path)
+    
+    def download_file(self, url: str, filepath: Path):
+        """Download a single file"""
+        logger.info(f"Downloading {filepath.name}")
+        
+        response = requests.get(url)
+        response.raise_for_status()
+        
+        with open(filepath, 'wb') as f:
+            f.write(response.content)
+
+    def setup_piper(self):
+        """Download and setup Piper TTS cleanly."""
+        # 1. Prefer system-installed piper
+        system_piper = shutil.which("piper")
+        if system_piper:
+            self.piper_executable = system_piper
+            logger.info(f"Using system Piper: {self.piper_executable}")
+            return
+
+        # 2. Use ~/.local/bin (safer than ~/.cache if noexec)
+        bin_dir = Path.home() / ".local" / "bin"
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        # Find the piper executable after extraction
+        piper_path = None
+        for root, dirs, files in os.walk(self.piper_dir):
+            for file in files:
+                if file == "piper" or file == "piper.exe":
+                    piper_path = Path(root) / file
+                    break
+            if piper_path:
+                break
+
+        if not piper_path:
+            raise RuntimeError("Could not find Piper executable after extraction")
+
+        self.piper_executable = str(piper_path)
+
+    
+    def download_voice(self, lang_code: str):
+        """Download voice model and config for language"""
+        if lang_code not in PIPER_VOICES:
+            raise ValueError(f"Unsupported language: {lang_code}")
+        
+        voice_info = PIPER_VOICES[lang_code]
+        voice_name = voice_info['name']
+        
+        model_path = self.voices_dir / f"{voice_name}.onnx"
+        config_path = self.voices_dir / f"{voice_name}.onnx.json"
+        
+        # Download model if not exists
+        if not model_path.exists():
+            self.download_file(voice_info['url'], model_path)
+        
+        # Download config if not exists
+        if not config_path.exists():
+            self.download_file(voice_info['config_url'], config_path)
+        
+        logger.info(f"Voice {voice_name} ready")
+        return model_path, config_path
+    
+    def synthesize_speech(self, text: str, lang_code: str) -> Optional[str]:
+        """Generate speech audio for text in specified language"""
+        try:
+            # Ensure Piper executable
+            if not self.piper_executable or not os.path.exists(self.piper_executable):
+                self.setup_piper()
+
+            # Double-check permissions
+            try:
+                os.chmod(self.piper_executable, 0o755)
+            except Exception:
+                pass
+
+            # Download voice if needed
+            model_path, config_path = self.download_voice(lang_code)
+
+            # Create temporary output file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
+                output_path = temp_file.name
+
+            cmd = [
+                self.piper_executable,
+                "--model", str(model_path),
+                "--config", str(config_path),
+                "--output_file", output_path
+            ]
+
+            logger.info(f"Running Piper TTS: {text[:50]}...")
+
+            try:
+                process = subprocess.Popen(
+                    cmd,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                stdout, stderr = process.communicate(input=text, timeout=30)
+            except PermissionError:
+                # Self-heal: nuke cached Piper + redownload
+                import shutil
+                shutil.rmtree(self.piper_dir, ignore_errors=True)
+                logger.warning("Piper not executable, re-downloading...")
+                self.setup_piper()
+                return self.synthesize_speech(text, lang_code)
+
+            if process.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                logger.info(f"TTS done: {output_path} ({os.path.getsize(output_path)} bytes)")
+                return output_path
+            else:
+                logger.error(f"Piper failed (code {process.returncode}) stderr={stderr}")
+                if os.path.exists(output_path):
+                    os.unlink(output_path)
+                return None
+
+        except Exception as e:
+            logger.error(f"TTS error: {e}", exc_info=True)
+            return None
+
 
 class TranslationService:
     def __init__(self):
@@ -273,6 +483,7 @@ class TranslationService:
             return None
 
 translation_service = TranslationService()
+tts_service = TTSService()
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -281,7 +492,8 @@ def health():
         'models_loaded': len(translation_service.models),
         'lingua_available': LINGUA_AVAILABLE,
         'lang_detector_loaded': translation_service.lang_detector is not None,
-        'whisper_loaded': translation_service.whisper_model is not None
+        'whisper_loaded': translation_service.whisper_model is not None,
+        'tts_available': tts_service.piper_executable is not None
     })
 
 @app.route('/translate', methods=['POST'])
@@ -316,13 +528,17 @@ def translate():
             logger.error("Translation failed - result is None")
             return jsonify({'error': 'Translation failed'}), 500
         
-        logger.info(f"Translation successful: '{text}' -> '{result}' (direction: {direction_used})")
+        # Determine target language for TTS
+        target_lang = direction_used.split('-')[1] if '-' in direction_used else 'en'
+        
+        logger.info(f"Translation successful: '{text}' -> '{result}' (direction: {direction_used}, target_lang: {target_lang})")
         
         return jsonify({
             'text': text,
             'language_pair': language_pair,
             'direction_used': direction_used,
-            'translation': result
+            'translation': result,
+            'target_language': target_lang
         })
         
     except Exception as e:
@@ -404,13 +620,17 @@ def transcribe():
                 logger.error("Translation failed")
                 return jsonify({'error': 'Translation failed'}), 500
             
+            # Determine target language for TTS
+            target_lang = direction_used.split('-')[1] if '-' in direction_used else 'en'
+            
             logger.info(f"Translation successful: '{translation[:100]}...'")
             
             return jsonify({
                 'transcribed_text': transcribed_text,
                 'language_pair': language_pair,
                 'direction_used': direction_used,
-                'translation': translation
+                'translation': translation,
+                'target_language': target_lang
             })
             
         finally:
@@ -425,6 +645,106 @@ def transcribe():
         logger.error(f"Full traceback: {traceback.format_exc()}")
         return jsonify({'error': f'Transcription failed: {str(e)}'}), 500
 
+@app.route('/fix-piper', methods=['POST'])
+def fix_piper():
+    """Manual endpoint to fix Piper permissions"""
+    try:
+        logger.info("Manual Piper fix requested")
+        
+        # Force re-setup
+        tts_service.piper_executable = None
+        tts_service.setup_piper()
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Piper fixed and ready at: {tts_service.piper_executable}',
+            'executable': tts_service.piper_executable,
+            'permissions': oct(os.stat(tts_service.piper_executable).st_mode)[-3:] if tts_service.piper_executable else None
+        })
+        
+    except Exception as e:
+        logger.error(f"Manual Piper fix failed: {e}")
+        return jsonify({
+            'status': 'error', 
+            'error': str(e)
+        }), 500
+
+@app.route('/tts', methods=['POST'])
+def text_to_speech():
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+        
+        text = data.get('text', '').strip()
+        language = data.get('language', 'en').strip()
+        
+        if not text:
+            return jsonify({'error': 'No text provided'}), 400
+        
+        if language not in PIPER_VOICES:
+            return jsonify({'error': f'Unsupported language: {language}'}), 400
+        
+        logger.info(f"TTS request: {text[:50]}... (lang: {language})")
+        
+        # Generate speech
+        audio_path = tts_service.synthesize_speech(text, language)
+        
+        if not audio_path or not os.path.exists(audio_path):
+            return jsonify({'error': 'TTS generation failed'}), 500
+        
+        # Return the audio file
+        return send_file(
+            audio_path,
+            mimetype='audio/wav',
+            as_attachment=False,
+            download_name='speech.wav'
+        )
+        
+    except Exception as e:
+        logger.error(f"TTS request error: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        return jsonify({'error': f'TTS failed: {str(e)}'}), 500
+def text_to_speech():
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+        
+        text = data.get('text', '').strip()
+        language = data.get('language', 'en').strip()
+        
+        if not text:
+            return jsonify({'error': 'No text provided'}), 400
+        
+        if language not in PIPER_VOICES:
+            return jsonify({'error': f'Unsupported language: {language}'}), 400
+        
+        logger.info(f"TTS request: {text[:50]}... (lang: {language})")
+        
+        # Generate speech
+        audio_path = tts_service.synthesize_speech(text, language)
+        
+        if not audio_path or not os.path.exists(audio_path):
+            return jsonify({'error': 'TTS generation failed'}), 500
+        
+        # Return the audio file
+        return send_file(
+            audio_path,
+            mimetype='audio/wav',
+            as_attachment=False,
+            download_name='speech.wav'
+        )
+        
+    except Exception as e:
+        logger.error(f"TTS request error: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        return jsonify({'error': f'TTS failed: {str(e)}'}), 500
+
 @app.route('/pairs', methods=['GET'])
 def get_pairs():
     return jsonify({'pairs': list(LANGUAGE_PAIRS.keys())})
@@ -434,12 +754,17 @@ def get_directions():
     return jsonify({'directions': list(MODEL_CONFIGS.keys())})
 
 def main():
-    logger.info("Starting translation server with Whisper support")
+    logger.info("Starting translation server with Whisper and Piper TTS support")
     
     if not LINGUA_AVAILABLE:
         logger.error("lingua-language-detector is required for auto-detection. Install with: pip install lingua-language-detector")
         sys.exit(1)
     
+    # Setup TTS first
+    logger.info("Setting up Piper TTS...")
+    tts_service.setup_piper()
+    
+    # Load translation models
     translation_service.load_models()
     translation_service.load_whisper_model()
     
