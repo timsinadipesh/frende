@@ -105,15 +105,18 @@
   }
 
   .theme-btn {
-    padding: 4px 8px;
+    padding: 6px 8px;
     border: none;
     background: transparent;
     color: var(--text-color);
     border-radius: 4px;
     cursor: pointer;
-    font-size: 0.8rem;
+    font-size: 16px;
     font-weight: 500;
     transition: all .15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .theme-btn.active {
@@ -161,6 +164,35 @@
     margin-bottom: 8px;
   }
 
+  .welcome-lang-selection {
+    margin-top: 24px;
+  }
+
+  .welcome-lang-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 20px;
+    border-radius: 12px;
+    border: 2px solid var(--accent-color);
+    cursor: pointer;
+    background: var(--panel-bg);
+    color: var(--accent-color);
+    transition: all .15s ease;
+    font-weight: 600;
+    letter-spacing: .3px;
+    white-space: nowrap;
+    font-size: 16px;
+    font-family: inherit;
+  }
+  
+  .welcome-lang-btn:hover {
+    background: var(--accent-color);
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0,102,204,0.3);
+  }
+
   .message {
     display: flex;
     gap: 12px;
@@ -200,10 +232,7 @@
     white-space: normal;
   }
 
-  .message.transcribed {
-    border-left: 3px solid var(--accent-color);
-    padding-left: 15px;
-  }
+  /* Removed the transcribed styles that were causing the blue line */
 
   .message-actions {
     display: flex;
@@ -445,6 +474,7 @@
     z-index: 1;
     opacity: 1;
     transition: opacity 200ms ease;
+    pointer-events: auto;
   }
 
   .voice-mode-btn:hover {
@@ -474,7 +504,7 @@
     pointer-events: none;
   }
 
-  /* Frequency bars animation */
+  /* Static frequency bars (default state) */
   .frequency-bars {
     display: flex;
     align-items: center;
@@ -488,14 +518,46 @@
     width: 2px;
     background: currentColor;
     border-radius: 1px;
+  }
+
+  /* Static heights for inactive state */
+  .frequency-bar:nth-child(1) { height: 12px; }
+  .frequency-bar:nth-child(2) { height: 16px; }
+  .frequency-bar:nth-child(3) { height: 20px; }
+  .frequency-bar:nth-child(4) { height: 16px; }
+  .frequency-bar:nth-child(5) { height: 12px; }
+
+  /* Animated bars only when hovering or active */
+  .voice-mode-btn:hover .frequency-bar,
+  .voice-mode-btn.active .frequency-bar {
     animation: frequency 0.8s infinite ease-in-out;
   }
 
-  .frequency-bar:nth-child(1) { height: 8px; animation-delay: 0s; }
-  .frequency-bar:nth-child(2) { height: 12px; animation-delay: 0.1s; }
-  .frequency-bar:nth-child(3) { height: 16px; animation-delay: 0.2s; }
-  .frequency-bar:nth-child(4) { height: 12px; animation-delay: 0.3s; }
-  .frequency-bar:nth-child(5) { height: 8px; animation-delay: 0.4s; }
+  .voice-mode-btn:hover .frequency-bar:nth-child(1),
+  .voice-mode-btn.active .frequency-bar:nth-child(1) { 
+    height: 8px; 
+    animation-delay: 0s; 
+  }
+  .voice-mode-btn:hover .frequency-bar:nth-child(2),
+  .voice-mode-btn.active .frequency-bar:nth-child(2) { 
+    height: 12px; 
+    animation-delay: 0.1s; 
+  }
+  .voice-mode-btn:hover .frequency-bar:nth-child(3),
+  .voice-mode-btn.active .frequency-bar:nth-child(3) { 
+    height: 16px; 
+    animation-delay: 0.2s; 
+  }
+  .voice-mode-btn:hover .frequency-bar:nth-child(4),
+  .voice-mode-btn.active .frequency-bar:nth-child(4) { 
+    height: 12px; 
+    animation-delay: 0.3s; 
+  }
+  .voice-mode-btn:hover .frequency-bar:nth-child(5),
+  .voice-mode-btn.active .frequency-bar:nth-child(5) { 
+    height: 8px; 
+    animation-delay: 0.4s; 
+  }
 
   @keyframes frequency {
     0%, 40%, 100% { transform: scaleY(0.3); }
@@ -619,14 +681,14 @@
   <div class="top-bar">
     <div class="left-group">
       <button id="lang-btn" class="lang-btn" title="Select Language" aria-label="Select Language">
-        <span id="selected-lang">EN → DE</span>
+        <span id="selected-lang">EN <=> DE</span>
       </button>
     </div>
     <div class="brand">frende</div>
     <div class="right-group">
       <div class="theme-toggle">
-        <button id="theme-light" class="theme-btn">Light</button>
-        <button id="theme-dark" class="theme-btn">Dark</button>
+        <button id="theme-light" class="theme-btn" title="Light theme">☀️</button>
+        <button id="theme-dark" class="theme-btn" title="Dark theme">🌙</button>
       </div>
     </div>
   </div>
@@ -634,8 +696,15 @@
   <div class="main">
     <div class="chat-history" id="chat-history">
       <div class="welcome-message">
-        <p>Welcome to frende</p>
-        <p>let there be no language barriers</p>
+        <p>private on-device ai interpreter</p>
+        <br>
+        <p>breaking language barriers</p>
+        <br>
+        <div class="welcome-lang-selection">
+          <button id="welcome-lang-btn" class="welcome-lang-btn" title="Select Language">
+            <span id="welcome-selected-lang">EN <=> DE</span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -645,7 +714,7 @@
         <textarea
           id="message-input"
           class="input-field"
-          placeholder="Type your message..."
+          placeholder="hello frende..."
           rows="1"
         ></textarea>
         
@@ -681,9 +750,9 @@
   <div id="lang-modal" class="modal">
     <div class="card">
       <div class="chips" id="lang-chips">
-        <div class="chip" data-pair="EN → DE">EN → DE</div>
-        <div class="chip" data-pair="DE → FR">DE → FR</div>
-        <div class="chip" data-pair="FR → EN">FR → EN</div>
+        <div class="chip" data-pair="EN <=> DE">EN <=> DE</div>
+        <div class="chip" data-pair="DE <=> FR">DE <=> FR</div>
+        <div class="chip" data-pair="FR <=> EN">FR <=> EN</div>
       </div>
     </div>
   </div>
@@ -694,6 +763,8 @@
   const chatHistory = document.getElementById('chat-history');
   const langBtn = document.getElementById('lang-btn');
   const selectedLangLabel = document.getElementById('selected-lang');
+  const welcomeLangBtn = document.getElementById('welcome-lang-btn');
+  const welcomeSelectedLangLabel = document.getElementById('welcome-selected-lang');
   const modal = document.getElementById('lang-modal');
   const chips = document.getElementById('lang-chips');
   const themeLightBtn = document.getElementById('theme-light');
@@ -710,12 +781,12 @@
   const API_BASE = 'http://localhost:5000';
 
   const LANGUAGE_PAIRS = {
-    'EN → DE': 'EN → DE',
-    'DE → FR': 'DE → FR', 
-    'FR → EN': 'FR → EN'
+    'EN <=> DE': 'EN ↔ DE',
+    'DE <=> FR': 'DE ↔ FR', 
+    'FR <=> EN': 'FR ↔ EN'
   };
 
-  let currentLangPair = 'EN → DE';
+  let currentLangPair = 'EN <=> DE';
   let mediaRecorder = null;
   let audioChunks = [];
   let isRecording = false;
@@ -751,10 +822,14 @@
       currentLangPair = savedLang;
     }
     selectedLangLabel.textContent = currentLangPair;
+    if (welcomeSelectedLangLabel) {
+      welcomeSelectedLangLabel.textContent = currentLangPair;
+    }
 
     const themeToApply = savedTheme || getSystemTheme();
     applyTheme(themeToApply);
 
+    // Update modal chips
     chips.querySelectorAll('.chip').forEach(chip => {
       chip.classList.toggle('active', chip.dataset.pair === currentLangPair);
     });
@@ -768,10 +843,76 @@
     localStorage.setItem('theme', theme);
   }
 
+  function clearChatHistory() {
+    // Remove all messages except the welcome message
+    const messages = chatHistory.querySelectorAll('.message');
+    messages.forEach(message => message.remove());
+    
+    // Show welcome message if it was hidden
+    let welcomeMsg = chatHistory.querySelector('.welcome-message');
+    if (!welcomeMsg) {
+      welcomeMsg = document.createElement('div');
+      welcomeMsg.className = 'welcome-message';
+      welcomeMsg.innerHTML = `
+        <p>private on-device ai interpreter</p>
+        <br>
+        <p>breaking language barriers</p>
+        <br>
+        <div class="welcome-lang-selection">
+          <button id="welcome-lang-btn" class="welcome-lang-btn" title="Select Language">
+            <span id="welcome-selected-lang">${currentLangPair}</span>
+          </button>
+        </div>
+      `;
+      chatHistory.appendChild(welcomeMsg);
+      
+      // Re-setup the welcome language button event listener
+      const newWelcomeLangBtn = document.getElementById('welcome-lang-btn');
+      if (newWelcomeLangBtn) {
+        newWelcomeLangBtn.addEventListener('click', openLangModal);
+      }
+    }
+  }
+
+  function changeLanguagePair(newLangPair) {
+    // Update current language pair
+    currentLangPair = newLangPair;
+    selectedLangLabel.textContent = currentLangPair;
+    if (welcomeSelectedLangLabel) {
+      welcomeSelectedLangLabel.textContent = currentLangPair;
+    }
+    saveSettings();
+    
+    // Update modal chips
+    chips.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    const activeChip = chips.querySelector(`[data-pair="${currentLangPair}"]`);
+    if (activeChip) {
+      activeChip.classList.add('active');
+    }
+    
+    // Clear chat history and start fresh
+    clearChatHistory();
+    
+    // Focus the input field after a short delay to ensure DOM is ready
+    setTimeout(() => {
+      messageInput.focus();
+    }, 100);
+    
+    showStatus(`Language pair changed to ${currentLangPair}`);
+  }
   function openLangModal() { modal.style.display = 'flex'; }
   function closeLangModal() { 
     modal.style.display = 'none'; 
-    messageInput.focus(); 
+    setTimeout(() => {
+      messageInput.focus();
+    }, 100);
+  }
+
+  function setupWelcomeLangBtnListener() {
+    const currentWelcomeLangBtn = document.getElementById('welcome-lang-btn');
+    if (currentWelcomeLangBtn) {
+      currentWelcomeLangBtn.addEventListener('click', openLangModal);
+    }
   }
 
   // Auto-resize textarea function
@@ -879,15 +1020,16 @@
   // Event listeners
   langBtn.addEventListener('click', openLangModal);
 
+  if (welcomeLangBtn) {
+    welcomeLangBtn.addEventListener('click', openLangModal);
+  }
+
   chips.addEventListener('click', e => {
     const chip = e.target.closest('.chip');
     if (!chip) return;
     
-    chips.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
-    chip.classList.add('active');
-    currentLangPair = chip.dataset.pair;
-    selectedLangLabel.textContent = currentLangPair;
-    saveSettings();
+    const newLangPair = chip.dataset.pair;
+    changeLanguagePair(newLangPair);
     closeLangModal();
   });
 
@@ -969,6 +1111,7 @@
     loadSettings();
     messageInput.focus();
     updateSendButton();
+    setupWelcomeLangBtnListener();
   });
 
   document.addEventListener('click', e => {
@@ -1262,7 +1405,7 @@
       
       const formData = new FormData();
       formData.append('audio', audioBlob, 'recording.webm');
-      formData.append('language_pair', currentLangPair);
+      formData.append('language_pair', LANGUAGE_PAIRS[currentLangPair]);
       
       console.log('FormData created, sending request...');
       
@@ -1282,8 +1425,8 @@
       const result = await response.json();
       console.log('Transcription result:', result);
       
-      // Add transcribed message
-      const humanMessage = addMessage(result.transcribed_text, true, true);
+      // Add transcribed message (without the blue line)
+      const humanMessage = addMessage(result.transcribed_text, true, false);
       
       // Add translation with play button
       const aiMessage = addMessage(result.translation, false, false, result.target_language);
@@ -1342,7 +1485,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           text: text, 
-          language_pair: languagePair
+          language_pair: LANGUAGE_PAIRS[languagePair]
         })
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1360,9 +1503,7 @@
   function addMessage(text, isHuman = true, isTranscribed = false, targetLanguage = null) {
     const el = document.createElement('div');
     el.className = `message ${isHuman ? 'from-human' : 'from-ai'}`;
-    if (isTranscribed) {
-      el.classList.add('transcribed');
-    }
+    // Removed the transcribed class that was causing the blue line
     
     // Create message content
     const contentEl = document.createElement('div');
