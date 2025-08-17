@@ -871,6 +871,12 @@
       if (newWelcomeLangBtn) {
         newWelcomeLangBtn.addEventListener('click', openLangModal);
       }
+    } else {
+      // Update existing welcome message language display
+      const existingWelcomeLabel = welcomeMsg.querySelector('#welcome-selected-lang');
+      if (existingWelcomeLabel) {
+        existingWelcomeLabel.textContent = currentLangPair;
+      }
     }
   }
 
@@ -878,9 +884,13 @@
     // Update current language pair
     currentLangPair = newLangPair;
     selectedLangLabel.textContent = currentLangPair;
-    if (welcomeSelectedLangLabel) {
-      welcomeSelectedLangLabel.textContent = currentLangPair;
+    
+    // Update welcome language label if it exists
+    const currentWelcomeSelectedLangLabel = document.getElementById('welcome-selected-lang');
+    if (currentWelcomeSelectedLangLabel) {
+      currentWelcomeSelectedLangLabel.textContent = currentLangPair;
     }
+    
     saveSettings();
     
     // Update modal chips
