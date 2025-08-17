@@ -512,6 +512,7 @@
     gap: 2px;
     width: 20px;
     height: 20px;
+    pointer-events: none;
   }
 
   .frequency-bar {
@@ -619,8 +620,9 @@
 
   .status {
     position: fixed;
-    bottom: 20px;
-    right: 20px;
+    bottom: 90px;
+    left: 50%;
+    transform: translateX(-50%);
     background: var(--panel-bg);
     color: var(--text-color);
     padding: 8px 16px;
@@ -1159,7 +1161,7 @@
 
       // Set loading state
       button.classList.add('loading');
-      button.textContent = '⏳';
+      button.textContent = '⳻';
 
       // Make TTS request
       const response = await fetch(`${API_BASE}/tts`, {
@@ -1199,7 +1201,7 @@
         console.log('Audio playback started');
         button.classList.remove('loading');
         button.classList.add('playing');
-        button.textContent = '⏸️';
+        button.textContent = '⸮️';
         currentlyPlayingAudio = audio;
         currentlyPlayingButton = button;
       };
