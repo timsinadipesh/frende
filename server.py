@@ -274,7 +274,32 @@ class TranslationService:
                 self.lang_detector = None
 
     def split_text(self, text: str, max_chars: int = 400) -> List[str]:
+        # For short text, return as is
+        if len(text) <= max_chars:
+            return [text]
+        
+        # First try sentence splitting
         sentences = re.split(r'(?<=[.!?])\s+', text)
+        
+        # If no sentence boundaries found, split by commas or semicolons
+        if len(sentences) == 1:
+            sentences = re.split(r'(?<=[,;])\s+', text)
+        
+        # If still no splits, split by words at word boundaries
+        if len(sentences) == 1:
+            words = text.split()
+            sentences = []
+            current = ""
+            for word in words:
+                if len(current) + len(word) + 1 <= max_chars:
+                    current += (" " if current else "") + word
+                else:
+                    if current:
+                        sentences.append(current)
+                    current = word
+            if current:
+                sentences.append(current)
+        
         chunks, current = [], ""
         for s in sentences:
             if len(current) + len(s) < max_chars:
@@ -285,6 +310,7 @@ class TranslationService:
                 current = s
         if current:
             chunks.append(current.strip())
+        
         return chunks
 
     def load_whisper_model(self):
@@ -410,19 +436,36 @@ class TranslationService:
         try:
             tokenizer = self.tokenizers[direction]
             model = self.models[direction]
-            chunks = self.split_text(text, max_chars=400)
+            
+            # For very short text, don't split at all
+            if len(text.strip()) <= 50:
+                chunks = [text.strip()]
+            else:
+                chunks = self.split_text(text, max_chars=400)
+            
             translations = []
             for chunk in chunks:
                 inputs = tokenizer(chunk, return_tensors="pt", padding=True, truncation=True, max_length=512)
+                
                 with torch.no_grad():
                     outputs = model.generate(
                         **inputs,
                         max_length=768,
+                        min_length=1,  # Ensure at least some output
                         num_beams=4,
-                        do_sample=False
+                        do_sample=False,
+                        pad_token_id=tokenizer.pad_token_id,  # Explicit pad token
+                        eos_token_id=tokenizer.eos_token_id,  # Explicit end token
+                        early_stopping=True  # Stop when EOS is generated
                     )
-                translations.append(tokenizer.decode(outputs[0], skip_special_tokens=True))
-            return " ".join(translations)
+                
+                decoded = tokenizer.decode(outputs[0], skip_special_tokens=True)
+                if decoded.strip():  # Only add non-empty translations
+                    translations.append(decoded)
+            
+            result = " ".join(translations).strip()
+            return result if result else None
+            
         except Exception as e:
             logger.error(f"Translation error for {direction}: {e}")
             return None
